@@ -106,7 +106,7 @@ st.write("---")
 
 # --- SAVE CONTROLS ---
 st.subheader("⏱️ Save Your Playback Position")
-col1, col2, col3 = st.columns()
+col1, col2, col3 = st.columns(3)
 with col1:
     input_minutes = st.number_input("Minutes", min_value=0, max_value=600, value=int(minutes), step=1)
 with col2:
