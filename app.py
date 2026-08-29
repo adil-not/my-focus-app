@@ -9,19 +9,16 @@ st.set_page_config(page_title="Cloud Focus Tracker", layout="wide")
 st.title("🎯 My Cloud Focus Playlist")
 
 # --- GITHUB CLOUD STORAGE SETUP ---
-# Securely connect to your GitHub account using secret tokens
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 REPO_NAME = st.secrets.get("REPO_NAME", "")
 
 def load_progress_from_cloud():
-    # If not on the web yet, read locally
     if not GITHUB_TOKEN or not REPO_NAME:
         if os.path.exists("progress.json"):
             with open("progress.json", "r") as f:
                 return json.load(f)
         return {}
     
-    # If on the web, fetch directly from GitHub repository
     try:
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(REPO_NAME)
@@ -31,22 +28,39 @@ def load_progress_from_cloud():
         return {}
 
 def save_progress_to_cloud(data):
-    # Save locally first
+    # Always log locally first as a fallback
     with open("progress.json", "w") as f:
         json.dump(data, f)
         
-    # If on the web, push the update directly up to GitHub
     if GITHUB_TOKEN and REPO_NAME:
         try:
             g = Github(GITHUB_TOKEN)
             repo = g.get_repo(REPO_NAME)
+            json_string = json.dumps(data, indent=4)
+            
             try:
+                # FIX: Explicitly fetch the file first to grab its mandatory tracking SHA key
                 contents = repo.get_contents("progress.json", ref="main")
-                repo.update_file(contents.path, "Update progress data", json.dumps(data), contents.sha, branch="main")
-            except:
-                repo.create_file("progress.json", "Create progress data", json.dumps(data), branch="main")
+                repo.update_file(
+                    path=contents.path, 
+                    message="Sync progress update", 
+                    content=json_string, 
+                    sha=contents.sha, # Crucial verification key
+                    branch="main"
+                )
+            except Exception:
+                # If the file does not exist yet on GitHub, create it from scratch
+                repo.create_file(
+                    path="progress.json", 
+                    message="Initialize progress data", 
+                    content=json_string, 
+                    branch="main"
+                )
+            return True
         except Exception as e:
-            st.error(f"Cloud Save Failed: {e}")
+            st.error(f"❌ Cloud Sync Error: {e}")
+            return False
+    return True
 
 # --- PLAYLIST PROCESSING ---
 def get_video_id(url):
@@ -117,9 +131,9 @@ with col3:
     if st.button("💾 Lock current time position", use_container_width=True):
         total_seconds = (input_minutes * 60) + input_seconds
         progress_data[active_video["id"]]["saved_seconds"] = total_seconds
-        save_progress_to_cloud(progress_data)
-        st.toast("✅ Time saved directly to the cloud tracker!", icon="💾")
-        st.rerun()
+        if save_progress_to_cloud(progress_data):
+            st.toast("✅ Time saved directly to the cloud tracker!", icon="💾")
+            st.rerun()
 
 st.write("---")
 is_done = video_state["completed"]
@@ -127,5 +141,5 @@ if st.button("🎉 Mark Video as Completely Finished" if not is_done else "🔄 
     progress_data[active_video["id"]]["completed"] = not is_done
     if not is_done:
         progress_data[active_video["id"]]["saved_seconds"] = 0
-    save_progress_to_cloud(progress_data)
-    st.rerun()
+    if save_progress_to_cloud(progress_data):
+        st.rerun()
